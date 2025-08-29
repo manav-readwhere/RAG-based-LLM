@@ -1,0 +1,66 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --neon-green: #39ff14;
+  --neon-cyan: #00fff5;
+}
+
+body {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.scanlines {
+  position: relative;
+}
+.scanlines::before {
+  content: "";
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(0,255,0,0.03) 0px,
+    rgba(0,255,0,0.03) 1px,
+    transparent 2px,
+    transparent 3px
+  );
+  pointer-events: none;
+  z-index: 5;
+}
+
+.glow {
+  text-shadow: 0 0 5px var(--neon-green), 0 0 10px var(--neon-green);
+}
+
+.caret-blink {
+  position: relative;
+}
+.caret-blink::after {
+  content: "_";
+  position: absolute;
+  right: -0.4rem;
+  animation: blink 1s step-start infinite;
+  color: var(--neon-cyan);
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+.bubble {
+  background: rgba(0, 255, 85, 0.08);
+  border: 1px solid rgba(0, 255, 170, 0.2);
+  border-radius: 0.5rem;
+}
+
+.bubble-assistant {
+  background: rgba(0, 255, 170, 0.09);
+  border-color: rgba(0, 255, 255, 0.25);
+}
+
+.scrollbar-thin::-webkit-scrollbar { height: 8px; width: 8px; }
+.scrollbar-thin::-webkit-scrollbar-thumb { background-color: #0ea5e9; border-radius: 8px; }
+.scrollbar-thin::-webkit-scrollbar-track { background-color: #0b0b0b; }
+
+
