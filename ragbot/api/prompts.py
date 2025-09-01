@@ -1,7 +1,18 @@
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 
-def build_answer_prompt(query: str, passages: List[Dict]) -> List[Dict[str, str]]:
+def _format_history(messages: List[Dict[str, str]], max_chars: int = 2000) -> str:
+    lines: List[str] = []
+    for m in messages:
+        role = m.get("role", "user")
+        content = (m.get("content") or "").strip()
+        lines.append(f"{role}: {content}")
+        if sum(len(x) for x in lines) > max_chars:
+            break
+    return "\n".join(lines)
+
+
+def build_answer_prompt(query: str, passages: List[Dict], history: Optional[List[Dict[str, str]]] = None) -> List[Dict[str, str]]:
     context_blocks = []
     for i, p in enumerate(passages, start=1):
         title = p.get("title", "")
@@ -12,14 +23,14 @@ def build_answer_prompt(query: str, passages: List[Dict]) -> List[Dict[str, str]
     context_str = "\n\n".join(context_blocks)
 
     system = (
-        "You are RAGBot, a precise assistant. Use the provided context to answer. "
-        "If the answer is not in the context, say you don't know. Be concise, "
-        "cite sources with [Document N] when relevant."
+        "You are RAGBot, a precise assistant. Use the provided context and the recent conversation to answer. "
+        "If the answer is not in the context, say you don't know. Be concise, cite sources with [Document N]."
     )
+    history_str = _format_history(history or [])
     user = (
         f"Question: {query}\n\n"
-        f"Context:\n{context_str}\n\n"
-        "Provide a helpful answer."
+        + (f"Conversation so far:\n{history_str}\n\n" if history_str else "")
+        + f"Context:\n{context_str}\n\nProvide a helpful answer."
     )
     return [
         {"role": "system", "content": system},

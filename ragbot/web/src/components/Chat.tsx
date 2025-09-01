@@ -1,9 +1,7 @@
 import React, { useRef, useState } from 'react'
-import { streamChat } from '../lib/api'
+import { streamChat, type ChatMessage } from '../lib/api'
 import { Message } from './Message'
 import { TypingDots } from './TypingDots'
-
-type ChatMessage = { role: 'user' | 'assistant', content: string }
 
 export function Chat() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -19,11 +17,17 @@ export function Chat() {
     if (!input.trim() || loading) return
     const q = input.trim()
     setInput('')
-    setMessages(prev => [...prev, { role: 'user', content: q }, { role: 'assistant', content: '' }])
+    const next = [...messages, { role: 'user', content: q }, { role: 'assistant', content: '' }]
+    setMessages(next)
     setLoading(true)
     assistantBuffer.current = ''
+
+    // Keep last N turns to send as context
+    const CONTEXT_TURNS = 8
+    const history = next.slice(Math.max(0, next.length - CONTEXT_TURNS * 2 - 1))
+
     try {
-      for await (const token of streamChat(q)) {
+      for await (const token of streamChat(q, history)) {
         assistantBuffer.current += token
         setMessages(prev => {
           const copy = [...prev]

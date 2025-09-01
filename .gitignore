@@ -6,6 +6,7 @@ __pycache__/
 *.so
 .venv/
 venv/
+ragbot/api/env.py
 
 # Env
 .env

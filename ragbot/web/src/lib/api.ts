@@ -1,8 +1,10 @@
-export async function* streamChat(query: string): AsyncGenerator<string> {
-  const resp = await fetch('http://localhost:8000/api/chat', {
+export type ChatMessage = { role: 'user' | 'assistant'; content: string }
+
+export async function* streamChat(query: string, messages: ChatMessage[]): AsyncGenerator<string> {
+  const resp = await fetch('http://localhost:8010/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query })
+    body: JSON.stringify({ query, messages })
   })
   if (!resp.ok || !resp.body) {
     throw new Error('Failed to start chat stream')

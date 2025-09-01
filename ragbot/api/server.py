@@ -49,10 +49,11 @@ def create_app() -> FastAPI:
         return stats
 
     @app.post("/api/chat")
-    def chat(payload: Dict[str, str] | None = None):
+    def chat(payload: Dict[str, Any] | None = None):
         if not payload or not payload.get("query"):
             raise HTTPException(status_code=400, detail="Missing 'query'")
         query = payload["query"]
+        history = payload.get("messages") or []
         rid = str(uuid.uuid4())[:8]
         t_start = time.time()
         preview = query.replace("\n", " ")[:120]
@@ -73,8 +74,8 @@ def create_app() -> FastAPI:
         dt_rerank = int((time.time() - t2) * 1000)
         logger.info(f"[{rid}] rerank in={len(initial_docs)} out={len(reranked)} dt_ms={dt_rerank}")
 
-        messages = build_answer_prompt(query, reranked)
-        logger.info(f"[{rid}] prompt messages={len(messages)} passages={len(reranked)}")
+        messages = build_answer_prompt(query, reranked, history=history)
+        logger.info(f"[{rid}] prompt messages={len(messages)} passages={len(reranked)} history_turns={len(history)}")
 
         def stream() -> Any:
             logger.info(f"[{rid}] stream start")

@@ -23,7 +23,8 @@ def ensure_index() -> Dict[str, Any]:
     env = load_env_es()
     index_name = env["ES_INDEX"]
     es = get_client()
-    if es.indices.exists(index=index_name):
+    # If an index OR alias exists with this name, do nothing
+    if es.indices.exists(index=index_name) or es.indices.exists_alias(name=index_name):
         return {"index": index_name, "created": False}
 
     dims = embedding_dimensions(env.get("EMBED_MODEL", "text-embedding-3-large"))
