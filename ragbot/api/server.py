@@ -1,4 +1,5 @@
 from typing import Any, Dict, List
+import json
 
 import time
 import uuid
@@ -11,9 +12,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from .elastic import ensure_index
 from .ingest import ingest_directory
 from .retrieve import retrieve
-from .rerank import rerank
 from .prompts import build_answer_prompt
-from .embeddings import embed_text
+from .pack import compact_docs
+from .agg_planner import plan_and_run
 from .answer import answer_question
 
 
@@ -45,7 +46,7 @@ def create_app() -> FastAPI:
         t0 = time.time()
         stats = ingest_directory(path)
         dt_ms = int((time.time() - t0) * 1000)
-        logger.info(f"[ingest] path='{path}' files={stats.get('files',0)} chunks={stats.get('chunks',0)} indexed={stats.get('indexed',0)} dt_ms={dt_ms}")
+        logger.info(f"[ingest] path='{path}' files={stats.get('files',0)} chunks={stats.get('chunks',0)} indoexed={stats.get('indexed',0)} dt_ms={dt_ms}")
         return stats
 
     @app.post("/api/chat")
@@ -54,28 +55,29 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=400, detail="Missing 'query'")
         query = payload["query"]
         history = payload.get("messages") or []
+
         rid = str(uuid.uuid4())[:8]
         t_start = time.time()
         preview = query.replace("\n", " ")[:120]
         logger.info(f"[{rid}] chat start q_len={len(query)} q_preview='{preview}'")
 
-        t0 = time.time()
-        initial_docs = retrieve(query, top_k=12)
-        dt_retrieve = int((time.time() - t0) * 1000)
-        logger.info(f"[{rid}] retrieve docs={len(initial_docs)} dt_ms={dt_retrieve}")
+        # Step A: Try LLM-driven aggregation planning+execution
+        print("Step A: Try LLM-driven aggregation planning+execution")
+        agg_result = plan_and_run(query, rid=rid)
 
-        t1 = time.time()
-        qvec = embed_text(query)
-        dt_embed = int((time.time() - t1) * 1000)
-        logger.info(f"[{rid}] embed dt_ms={dt_embed}")
-
-        t2 = time.time()
-        reranked = rerank(qvec, initial_docs, top_k=8)
-        dt_rerank = int((time.time() - t2) * 1000)
-        logger.info(f"[{rid}] rerank in={len(initial_docs)} out={len(reranked)} dt_ms={dt_rerank}")
-
-        messages = build_answer_prompt(query, reranked, history=history)
-        logger.info(f"[{rid}] prompt messages={len(messages)} passages={len(reranked)} history_turns={len(history)}")
+        # Build context only from aggregation results (no retrieval)
+        packed: List[Dict[str, Any]] = []
+        if agg_result:
+            packed = [
+                {
+                    "title": "Aggregations",
+                    "source": "elasticsearch",
+                    "url": "",
+                    "content": json.dumps(agg_result, separators=(",", ":")),
+                }
+            ]
+        messages = build_answer_prompt(query, packed, history=history)
+        logger.info(f"[{rid}] prompt messages={len(messages)} passages={len(packed)} history_turns={len(history)}")
 
         def stream() -> Any:
             logger.info(f"[{rid}] stream start")

@@ -1,12 +1,12 @@
 from typing import Dict, List
 
-from .embeddings import embed_text
 from .elastic import search
 
 
-def retrieve(query: str, top_k: int = 8) -> List[Dict]:
-    qvec = embed_text(query)
-    resp = search(query=query, query_vector=qvec, top_k=top_k)
+def retrieve(query: str, top_k: int = 10000) -> List[Dict]:
+    # Pure keyword retrieval across the alias; no kNN constraint
+    resp = search(query=query, query_vector=None, top_k=top_k)
+
     hits = resp.get("hits", {}).get("hits", [])
     results: List[Dict] = []
     for h in hits:

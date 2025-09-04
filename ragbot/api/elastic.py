@@ -62,19 +62,10 @@ def index_docs(docs: List[Dict[str, Any]]) -> Tuple[int, List[Any]]:
     return success, results
 
 
-def search(query: str, query_vector: Optional[List[float]], top_k: int = 8) -> Dict[str, Any]:
+def search(query: str, query_vector: Optional[List[float]], top_k: int = 10000) -> Dict[str, Any]:
     env = load_env_es()
     es = get_client()
     index = env["ES_INDEX"]
-
-    knn_clause: Optional[Dict[str, Any]] = None
-    if query_vector is not None:
-        knn_clause = {
-            "field": "embedding",
-            "query_vector": query_vector,
-            "k": max(top_k * 4, 10),
-            "num_candidates": max(top_k * 25, 100),
-        }
 
     text_query = {
         "bool": {
@@ -90,10 +81,8 @@ def search(query: str, query_vector: Optional[List[float]], top_k: int = 8) -> D
         "size": top_k,
         "query": text_query,
         "_source": True,
-        "track_total_hits": False,
+        "track_total_hits": True,
     }
-    if knn_clause:
-        body["knn"] = knn_clause
 
     resp = es.search(index=index, body=body)
     return resp

@@ -105,32 +105,111 @@ def embed_batched(texts: List[str], batch_size: int, max_retries: int = 3, base_
 
 # ---------- Elasticsearch helpers ----------
 
-def ensure_index_name(index_name: str, dims: int) -> None:
+def ensure_index_with_mappings(index_name: str, mappings: Dict) -> None:
     es = get_client()
     if es.indices.exists(index=index_name):
         logger.info("Index exists index=%s", index_name)
         return
-    mappings = {
+    es.indices.create(index=index_name, mappings=mappings)
+    logger.info("Index created index=%s", index_name)
+
+
+def users_mappings(dims: int) -> Dict:
+    return {
         "properties": {
             "id": {"type": "keyword"},
             "table": {"type": "keyword"},
-            "content": {"type": "text"},
             "source": {"type": "keyword"},
             "created_at": {"type": "date"},
-            # relationships / metadata (for sales)
+            "content": {"type": "text"},
+            "embedding": {"type": "dense_vector", "dims": dims, "index": True, "similarity": "cosine"},
+            # user fields
+            "first_name": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
+            "last_name": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
+            "email": {"type": "keyword"},
+            "mobile_number": {"type": "keyword"},
+            "date_of_birth": {"type": "date"},
+            "nationality": {"type": "keyword"},
+            "id_type": {"type": "keyword"},
+            "id_number": {"type": "keyword"},
+            "country_of_residency": {"type": "keyword"},
+            "city_of_residency": {"type": "keyword"},
+        }
+    }
+
+
+def campaigns_mappings(dims: int) -> Dict:
+    return {
+        "properties": {
+            "id": {"type": "keyword"},
+            "table": {"type": "keyword"},
+            "source": {"type": "keyword"},
+            "created_at": {"type": "date"},
+            "content": {"type": "text"},
+            "embedding": {"type": "dense_vector", "dims": dims, "index": True, "similarity": "cosine"},
+            # campaign fields
+            "series_code": {"type": "keyword"},
+            "campaign_type": {"type": "keyword"},
+            "ticket_price": {"type": "scaled_float", "scaling_factor": 100},
+            "start_date": {"type": "date"},
+            "end_date": {"type": "date"},
+            "total_tickets": {"type": "integer"},
+            "price_value": {"type": "keyword"},
+        }
+    }
+
+
+def sales_mappings(dims: int) -> Dict:
+    return {
+        "properties": {
+            "id": {"type": "keyword"},
+            "table": {"type": "keyword"},
+            "source": {"type": "keyword"},
+            "created_at": {"type": "date"},
+            "content": {"type": "text"},
+            "embedding": {"type": "dense_vector", "dims": dims, "index": True, "similarity": "cosine"},
+            # flat sales fields
+            "transaction_id": {"type": "keyword"},
+            "ticket_number": {"type": "keyword"},
+            "purchase_date": {"type": "date"},
+            "purchase_time": {"type": "keyword"},
+            "purchase_date_time": {"type": "date"},
+            "payment_method": {"type": "keyword"},
+            "payment_channel": {"type": "keyword"},
+            "price_segment": {"type": "keyword"},
+            "currency": {"type": "keyword"},
+            "revenue": {"type": "scaled_float", "scaling_factor": 100},
+            "is_first_time_buyer": {"type": "boolean"},
+            "customer_segment": {"type": "keyword"},
+            "is_weekend": {"type": "boolean"},
             "user_id": {"type": "keyword"},
             "campaign_id": {"type": "keyword"},
-            # vector
-            "embedding": {
-                "type": "dense_vector",
-                "dims": dims,
-                "index": True,
-                "similarity": "cosine",
+            # nested/denormalized objects
+            "user": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "keyword"},
+                    "first_name": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
+                    "last_name": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
+                    "email": {"type": "keyword"},
+                    "nationality": {"type": "keyword"},
+                    "country_of_residency": {"type": "keyword"},
+                    "city_of_residency": {"type": "keyword"},
+                },
+            },
+            "campaign": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "keyword"},
+                    "series_code": {"type": "keyword"},
+                    "campaign_type": {"type": "keyword"},
+                    "ticket_price": {"type": "scaled_float", "scaling_factor": 100},
+                    "start_date": {"type": "date"},
+                    "end_date": {"type": "date"},
+                },
             },
         }
     }
-    es.indices.create(index=index_name, mappings=mappings)
-    logger.info("Index created index=%s dims=%s", index_name, dims)
 
 
 def bulk_index(index_name: str, docs: List[Dict]) -> Tuple[int, int]:
@@ -168,7 +247,14 @@ def to_text(table: str, row: Dict) -> str:
 
 def summarize_user(u: Dict) -> str:
     keys = [
-        "first_name", "last_name", "email", "mobile_number", "country", "age", "is_uae_resident",
+        "first_name",
+        "last_name",
+        "email",
+        "mobile_number",
+        "nationality",
+        "date_of_birth",
+        "country_of_residency",
+        "city_of_residency",
     ]
     info = {k: u.get(k) for k in keys if k in u}
     return "\n".join(["User Summary:"] + dict_to_lines(info))
@@ -190,6 +276,17 @@ def build_user_doc(row: Dict, now_iso: str, embedding: List[float]) -> Dict:
         "content": to_text("users", row),
         "embedding": embedding,
         "created_at": now_iso,
+        # flattened user fields (for filters/aggregations)
+        "first_name": row.get("first_name"),
+        "last_name": row.get("last_name"),
+        "email": row.get("email"),
+        "mobile_number": row.get("mobile_number"),
+        "date_of_birth": row.get("date_of_birth"),
+        "nationality": row.get("nationality"),
+        "id_type": row.get("id_type"),
+        "id_number": row.get("id_number"),
+        "country_of_residency": row.get("country_of_residency"),
+        "city_of_residency": row.get("city_of_residency"),
     }
 
 
@@ -201,6 +298,14 @@ def build_campaign_doc(row: Dict, now_iso: str, embedding: List[float]) -> Dict:
         "content": to_text("campaigns", row),
         "embedding": embedding,
         "created_at": now_iso,
+        # flattened campaign fields
+        "series_code": row.get("series_code"),
+        "campaign_type": row.get("campaign_type"),
+        "ticket_price": row.get("ticket_price"),
+        "start_date": row.get("start_date"),
+        "end_date": row.get("end_date"),
+        "total_tickets": row.get("total_tickets"),
+        "prize_value": row.get("prize_value"),
     }
 
 
@@ -213,6 +318,8 @@ def build_sale_doc(row: Dict, now_iso: str, embedding: List[float], users_by_id:
     if campaign_id and campaign_id in campaigns_by_id:
         parts.append(summarize_campaign(campaigns_by_id[campaign_id]))
     content = "\n\n".join(parts)
+    user_obj = users_by_id.get(user_id, {}) if user_id else {}
+    campaign_obj = campaigns_by_id.get(campaign_id, {}) if campaign_id else {}
     return {
         "id": str(row.get("id")),
         "table": "sales_transactions",
@@ -220,8 +327,41 @@ def build_sale_doc(row: Dict, now_iso: str, embedding: List[float], users_by_id:
         "content": content,
         "embedding": embedding,
         "created_at": now_iso,
+        # fk
         "user_id": user_id,
         "campaign_id": campaign_id,
+        # flat sales fields
+        "transaction_id": row.get("transaction_id"),
+        "ticket_number": row.get("ticket_number"),
+        "purchase_date": row.get("purchase_date"),
+        "purchase_time": row.get("purchase_time"),
+        "purchase_date_time": row.get("purchase_date_time") or row.get("purchase_date"),
+        "payment_method": row.get("payment_method"),
+        "payment_channel": row.get("payment_channel"),
+        "price_segment": row.get("price_segment"),
+        "currency": row.get("currency"),
+        "revenue": row.get("revenue"),
+        "is_first_time_buyer": row.get("is_first_time_buyer"),
+        "customer_segment": row.get("customer_segment"),
+        "is_weekend": row.get("is_weekend"),
+        # denormalized objects
+        "user": {
+            "id": user_obj.get("id"),
+            "first_name": user_obj.get("first_name"),
+            "last_name": user_obj.get("last_name"),
+            "email": user_obj.get("email"),
+            "nationality": user_obj.get("nationality"),
+            "country_of_residency": user_obj.get("country_of_residency"),
+            "city_of_residency": user_obj.get("city_of_residency"),
+        } if user_obj else None,
+        "campaign": {
+            "id": campaign_obj.get("id"),
+            "series_code": campaign_obj.get("series_code"),
+            "campaign_type": campaign_obj.get("campaign_type"),
+            "ticket_price": campaign_obj.get("ticket_price"),
+            "start_date": campaign_obj.get("start_date"),
+            "end_date": campaign_obj.get("end_date"),
+        } if campaign_obj else None,
     }
 
 
@@ -229,7 +369,13 @@ def build_sale_doc(row: Dict, now_iso: str, embedding: List[float], users_by_id:
 
 def migrate_simple_stream(sb: Client, table: str, index_name: str, dims: int, doc_builder, embed_batch_size: int, fetch_batch_size: int, index_batch_size: int, limit: Optional[int]) -> None:
     logger.info("Migrate start table=%s index=%s", table, index_name)
-    ensure_index_name(index_name, dims)
+    # choose mappings per table
+    if table == "users":
+        ensure_index_with_mappings(index_name, users_mappings(dims))
+    elif table == "campaigns":
+        ensure_index_with_mappings(index_name, campaigns_mappings(dims))
+    else:
+        ensure_index_with_mappings(index_name, {"properties": {}})
     total_docs = 0
     for batch in fetch_table_rows(sb, table=table, limit=limit, fetch_batch_size=fetch_batch_size):
         texts = [to_text(table, r) for r in batch]
@@ -247,7 +393,7 @@ def migrate_simple_stream(sb: Client, table: str, index_name: str, dims: int, do
 
 def migrate_sales_stream(sb: Client, index_name: str, dims: int, embed_batch_size: int, fetch_batch_size: int, index_batch_size: int, limit: Optional[int]) -> None:
     logger.info("Migrate sales start index=%s", index_name)
-    ensure_index_name(index_name, dims)
+    ensure_index_with_mappings(index_name, sales_mappings(dims))
     total_docs = 0
     for sales_batch in fetch_table_rows(sb, table="sales_transactions", limit=limit, fetch_batch_size=fetch_batch_size):
         # fetch related users/campaigns only for this batch
@@ -279,12 +425,34 @@ def migrate_sales_stream(sb: Client, index_name: str, dims: int, embed_batch_siz
     logger.info("Migrate sales done total_indexed=%s", total_docs)
 
 
+def delete_indices(indices: List[str], alias: Optional[str] = None) -> None:
+    es = get_client()
+    # Remove alias if present
+    if alias:
+        try:
+            es.indices.delete_alias(index="*", name=alias)
+            logger.info("Deleted alias name=%s", alias)
+        except Exception:
+            logger.info("Alias not found or already removed name=%s", alias)
+    # Delete indices
+    for idx in indices:
+        try:
+            if es.indices.exists(index=idx):
+                es.indices.delete(index=idx)
+                logger.info("Deleted index index=%s", idx)
+            else:
+                logger.info("Index not found index=%s", idx)
+        except Exception as e:
+            logger.warning("Failed deleting index=%s error=%s", idx, e)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Streamed Supabase→Elasticsearch migration (memory-optimized)")
     parser.add_argument("--users-index", default="users", help="Elasticsearch index name for users")
     parser.add_argument("--campaigns-index", default="campaigns", help="Elasticsearch index name for campaigns")
     parser.add_argument("--sales-index", default="sales_transactions", help="Elasticsearch index name for sales")
     parser.add_argument("--alias", default="kb_docs", help="Alias to point chatbot retrieval at (default: kb_docs)")
+    parser.add_argument("--reset", action="store_true", help="Delete existing indices and alias before migration")
     parser.add_argument("--embed-batch-size", type=int, default=500, help="Embedding batch size")
     parser.add_argument("--fetch-batch-size", type=int, default=500, help="Rows fetched per request")
     parser.add_argument("--index-batch-size", type=int, default=1000, help="Docs per bulk index chunk")
@@ -299,6 +467,9 @@ def main() -> None:
     sb = get_supabase_client()
     dims = embedding_dimensions(os.getenv("EMBED_MODEL", "text-embedding-3-large"))
     logger.info("Embedding dims=%s", dims)
+
+    if args.reset:
+        delete_indices([args.users_index, args.campaigns_index, args.sales_index], alias=args.alias)
 
     # Users and campaigns streamed
     migrate_simple_stream(sb, "users", args.users_index, dims, build_user_doc, args.embed_batch_size, args.fetch_batch_size, args.index_batch_size, args.limit_per_table)

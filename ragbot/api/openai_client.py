@@ -42,7 +42,7 @@ def embed_texts(texts: List[str], model: Optional[str] = None) -> List[List[floa
         return [item["embedding"] for item in data["data"]]
 
 
-def chat_completion(messages: List[Dict[str, str]], stream: bool = True, temperature: float = 0.2) -> Generator[str, None, None] | str:
+def _chat_stream(messages: List[Dict[str, str]], temperature: float) -> Generator[str, None, None]:
     env = load_env()
     api_key = env["OPENAI_API_KEY"]
     model_name = env["GEN_MODEL"]
@@ -51,46 +51,64 @@ def chat_completion(messages: List[Dict[str, str]], stream: bool = True, tempera
         "model": model_name,
         "messages": messages,
         "temperature": temperature,
-        "stream": stream,
+        "stream": True,
     }
-
-    if stream:
-        with httpx.Client(timeout=None) as client:
-            with client.stream("POST", url, headers=_auth_headers(api_key), json=payload) as r:
-                r.raise_for_status()
-                for line in r.iter_lines():
-                    if not line:
-                        continue
-                    if isinstance(line, bytes):
-                        line = line.decode("utf-8")
-                    if not line.startswith("data:") and not line.startswith("data "):
-                        # Some proxies may not prefix with 'data:'; try parse JSON directly
-                        try:
-                            obj = json.loads(line)
-                        except Exception:
-                            continue
-                        delta = obj.get("choices", [{}])[0].get("delta", {})
-                        content = delta.get("content")
-                        if content:
-                            yield content
-                        continue
-                    data = line.split(":", 1)[1].strip()
-                    if data == "[DONE]":
-                        break
+    print("Payload: ", payload)
+    with httpx.Client(timeout=None) as client:
+        with client.stream("POST", url, headers=_auth_headers(api_key), json=payload) as r:
+            r.raise_for_status()
+            for line in r.iter_lines():
+                if not line:
+                    continue
+                if isinstance(line, bytes):
+                    line = line.decode("utf-8")
+                if not line.startswith("data:") and not line.startswith("data "):
                     try:
-                        obj = json.loads(data)
+                        obj = json.loads(line)
                     except Exception:
                         continue
                     delta = obj.get("choices", [{}])[0].get("delta", {})
                     content = delta.get("content")
                     if content:
                         yield content
-        return ""
+                    continue
+                data = line.split(":", 1)[1].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    obj = json.loads(data)
+                except Exception:
+                    continue
+                delta = obj.get("choices", [{}])[0].get("delta", {})
+                content = delta.get("content")
+                if content:
+                    yield content
+
+
+def _chat_text(messages: List[Dict[str, str]], temperature: float) -> str:
+    env = load_env()
+    api_key = env["OPENAI_API_KEY"]
+    model_name = env["GEN_MODEL"]
+    url = f"{OPENAI_BASE_URL}/chat/completions"
+    payload: Dict[str, Any] = {
+        "model": model_name,
+        "messages": messages,
+        "temperature": temperature,
+        "stream": False,
+    }
+    print("Payload: ", payload)
+    with httpx.Client(timeout=120) as client:
+        resp = client.post(url, headers=_auth_headers(api_key), json=payload)
+        resp.raise_for_status()
+        data = resp.json()
+        print(data)
+        return data["choices"][0]["message"]["content"]
+
+
+def chat_completion(messages: List[Dict[str, str]], stream: bool = True, temperature: float = 0.2) -> Generator[str, None, None] | str:
+    if stream:
+        return _chat_stream(messages, temperature)
     else:
-        with httpx.Client(timeout=120) as client:
-            resp = client.post(url, headers=_auth_headers(api_key), json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-            return data["choices"][0]["message"]["content"]
+        return _chat_text(messages, temperature)
 
 
