@@ -11,9 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .elastic import ensure_index
 from .ingest import ingest_directory
-from .retrieve import retrieve
 from .prompts import build_answer_prompt
-from .pack import compact_docs
 from .agg_planner import plan_and_run
 from .answer import answer_question
 
