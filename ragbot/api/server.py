@@ -60,7 +60,6 @@ def create_app() -> FastAPI:
         logger.info(f"[{rid}] chat start q_len={len(query)} q_preview='{preview}'")
 
         # Step A: Try LLM-driven aggregation planning+execution
-        print("Step A: Try LLM-driven aggregation planning+execution")
         agg_result = plan_and_run(query, rid=rid)
 
         # Build context only from aggregation results (no retrieval)

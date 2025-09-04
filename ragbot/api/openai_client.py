@@ -53,7 +53,7 @@ def _chat_stream(messages: List[Dict[str, str]], temperature: float) -> Generato
         "temperature": temperature,
         "stream": True,
     }
-    print("Payload: ", payload)
+
     with httpx.Client(timeout=None) as client:
         with client.stream("POST", url, headers=_auth_headers(api_key), json=payload) as r:
             r.raise_for_status()
@@ -96,12 +96,11 @@ def _chat_text(messages: List[Dict[str, str]], temperature: float) -> str:
         "temperature": temperature,
         "stream": False,
     }
-    print("Payload: ", payload)
+
     with httpx.Client(timeout=120) as client:
         resp = client.post(url, headers=_auth_headers(api_key), json=payload)
         resp.raise_for_status()
         data = resp.json()
-        print(data)
         return data["choices"][0]["message"]["content"]
 
 
